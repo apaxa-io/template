@@ -3,6 +3,7 @@ package template
 import (
 	"github.com/apaxa-io/strconvhelper"
 	"io/ioutil"
+	"log"
 	"regexp"
 )
 
@@ -13,7 +14,7 @@ const (
 
 var re = regexp.MustCompile(regexp.QuoteMeta(OpeningTag) + "(?:[[:space:]]+([[:alnum:]]*))?[[:space:]]+" + regexp.QuoteMeta(CloseTag))
 
-func ParseString(s string) (r map[string]string) {
+func ParseString(s string) (r map[string]string, o []string) {
 	r = make(map[string]string)
 	seps := re.FindAllStringSubmatchIndex(s, -1)
 
@@ -53,15 +54,25 @@ func ParseString(s string) (r map[string]string) {
 		//
 
 		r[name] = value
+		o = append(o, name)
 	}
 
 	return
 }
 
-func ParseFile(fileName string) (map[string]string, error) {
-	b, err := ioutil.ReadFile(fileName)
+func ParseFile(filename string) (r map[string]string, o []string, err error) {
+	b, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return ParseString(string(b)), nil
+	r, o = ParseString(string(b))
+	return
+}
+
+func MustParseFile(filename string) (r map[string]string, o []string) {
+	r, o, err := ParseFile(filename)
+	if err != nil {
+		log.Panic("Unable to parse template: ", err)
+	}
+	return
 }
