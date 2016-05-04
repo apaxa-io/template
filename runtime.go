@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"log"
 	"regexp"
-	"net/http"
 )
 
 const (
