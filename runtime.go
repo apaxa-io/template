@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"regexp"
+	"net/http"
 )
 
 const (
@@ -72,7 +73,26 @@ func ParseFile(filename string) (r map[string]string, o []string, err error) {
 func MustParseFile(filename string) (r map[string]string, o []string) {
 	r, o, err := ParseFile(filename)
 	if err != nil {
-		log.Panic("Unable to parse template: ", err)
+		log.Panic("Unable to parse template: ", err)	// TODO change log.Panic to smth other?
 	}
 	return
 }
+
+/*
+TODO implement this function
+func CompileSimple(w http.ResponseWriter, filename string) error {
+	t, o, err := template.ParseFile(filename)
+	if err != nil {
+		log.Print(err)
+		return err
+	}
+
+	for _, name := range o {
+		if _, err := w.Write([]byte(t[name])); err != nil {
+			log.Print(err)
+			return err
+		}
+	}
+	return nil
+}
+*/
