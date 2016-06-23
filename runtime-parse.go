@@ -9,8 +9,12 @@ import (
 )
 
 const (
-	OpeningTag = "<?"
-	CloseTag   = "?>"
+	OpeningTag        = "<?"
+	CloseTag          = "?>"
+	TemplatePartName1 = "[[:alnum:]]*"                  // Default name
+	TemplatePartName2 = "(?:[[:alnum:]]*[[:alpha:]])?#" // Name with suffix request (end with '#')
+	TemplatePartName  = "(?:" + TemplatePartName1 + ")|(?:" + TemplatePartName2 + ")"
+	MainRegexp        = "[[:space:]]*(" + TemplatePartName + ")?[[:space:]]*(\\+p?o?s?)?[[:space:]]*"
 )
 
 type Options struct {
@@ -25,7 +29,20 @@ func defaultOptions() (o Options) {
 	return
 }
 
-var re = regexp.MustCompile(regexp.QuoteMeta(OpeningTag) + "(?:[[:space:]]+([[:alnum:]]*))?(?:[[:space:]]+(\\+noprefix))?(?:[[:space:]]+(\\+optional))?(?:[[:space:]]+(\\+suffix))?[[:space:]]+" + regexp.QuoteMeta(CloseTag))
+func (o Options) String() string {
+	replacer := map[bool]string{
+		false: "no",
+		true:  "yes",
+	}
+	return "prefix: " + replacer[o.Prefix] + ", optional: " + replacer[o.Optional] + ", suffix: " + replacer[o.Suffix]
+}
+
+var re = regexp.MustCompile(regexp.QuoteMeta(OpeningTag) + MainRegexp + regexp.QuoteMeta(CloseTag))
+
+// TODO move to other package
+func ByteIsNumChar(b byte) bool {
+	return b >= '0' && b <= '9'
+}
 
 func ParseString(s string) (strings map[string]string, order []string, options map[string]Options, err error) {
 	strings = make(map[string]string)
@@ -34,10 +51,10 @@ func ParseString(s string) (strings map[string]string, order []string, options m
 
 	// Check for omitted first splitter
 	if len(seps) == 0 || seps[0][0] != 0 {
-		seps = append([][]int{[]int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}, seps...)
+		seps = append([][]int{[]int{0, 0, -1, -1, -1, -1}}, seps...)
 	}
 
-	var nextAutoName = 0
+	var lastSuffixes = make(map[string]int)
 
 	for i, sep := range seps {
 		// Name
@@ -47,26 +64,91 @@ func ParseString(s string) (strings map[string]string, order []string, options m
 			name = s[sep[2]:sep[3]]
 		}
 
-		if name == "" {
-			name = strconvhelper.FormatInt(nextAutoName)
-			nextAutoName++
-		} else if v, err := strconvhelper.ParseInt(name); err == nil {
-			nextAutoName = v + 1
+		// Name -> Base name [+ suffix]
+		var baseName string
+		var autoSuffixRequired bool = false
+		var currentSuffix = -1
+
+		//log.Print(name)
+		switch {
+		case name == "":
+			//log.Print("Empty name")
+			baseName = ""
+			autoSuffixRequired = true
+		case name[len(name)-1] == '#':
+			//log.Print("#-ended name")
+			baseName = name[:len(name)-1]
+			autoSuffixRequired = true
+		case ByteIsNumChar(name[len(name)-1]):
+			//log.Print("Num-ended name")
+			suffixLen := 1
+			for suffixLen < len(name) && ByteIsNumChar(name[len(name)-1-suffixLen]) {
+				suffixLen++
+			}
+			baseName = name[:len(name)-suffixLen]
+			if currentSuffix, err = strconvhelper.ParseInt(name[len(name)-suffixLen:]); err != nil {
+				err = errors.New("Unable to parse suffix: " + err.Error())
+				return
+			}
+			//log.Print(name, " ", suffixLen, " ", baseName, " ", currentSuffix)
+		default:
+			//log.Print("Simple name")
+			baseName = name
 		}
 
+		// Extract suffix from map if required
+		if autoSuffixRequired {
+			var ok bool
+			if currentSuffix, ok = lastSuffixes[baseName]; !ok {
+				currentSuffix = 0
+			} else {
+				currentSuffix++
+			}
+		}
+
+		// Save current suffix to map
+		if currentSuffix >= 0 {
+			lastSuffixes[baseName] = currentSuffix
+		}
+
+		// Base name [+ suffix] -> name
+		name = baseName
+		if currentSuffix >= 0 {
+			name += strconvhelper.FormatInt(currentSuffix)
+		}
+
+		// Check for name duplication
 		if _, ok := strings[name]; ok {
-			err = errors.New("Duplicate template name detected.")
+			err = errors.New("Duplicate template name detected: " + name + ".")
+			return
 		}
 
 		// options
-		//options := defaultOptions()
 		var opt Options
-		opt.Prefix = !(sep[4] >= 0 && sep[5] >= 0)
-		opt.Optional = sep[6] >= 0 && sep[7] >= 0
-		opt.Suffix = sep[8] >= 0 && sep[9] >= 0
+		if sep[4] >= 0 && sep[5] >= 0 { // Options passed
+			//log.Print(s[sep[0]:sep[1]], sep[4], sep[5])
+			optStr := s[sep[4]+1 : sep[5]] // Skip '+'
+			//log.Print(optStr)
+			//log.Print(len(optStr))
+			for _, o := range optStr {
+				//log.Print(o)
+				switch o {
+				case 'p':
+					opt.Prefix = true
+				case 'o':
+					opt.Optional = true
+				case 's':
+					opt.Suffix = true
+				default:
+					err = errors.New("Unknown option '" + string(o) + "'")
+					return
+				}
+			}
+		} else {
+			opt = defaultOptions()
+		}
 
 		// Value
-
 		var end int
 		if i+1 < len(seps) {
 			end = seps[i+1][0]

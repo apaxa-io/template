@@ -11,6 +11,8 @@ import (
 func Execute(w io.Writer, strings map[string]string, order []string, options map[string]Options, arguments ...interface{}) error {
 	argNum := 0
 	for _, name := range order {
+		//log.Print(argNum)
+		// Prefix
 		if options[name].Prefix {
 			if p, ok := arguments[argNum].(string); ok {
 				if p != "" {
@@ -19,10 +21,15 @@ func Execute(w io.Writer, strings map[string]string, order []string, options map
 					}
 				}
 			} else {
+				//log.Print(arguments[argNum])
+				//log.Print(strings[name])
+				//log.Print(options[name])
 				return errors.New("Prefix for template \"" + name + "\" is not string (argument #" + strconvhelper.FormatInt(argNum) + "), it is of type " + reflect.TypeOf(arguments[argNum]).String())
 			}
 			argNum++
 		}
+
+		// It self
 		writeItself := true
 		if options[name].Optional {
 			if b, ok := arguments[argNum].(bool); ok {
@@ -32,11 +39,13 @@ func Execute(w io.Writer, strings map[string]string, order []string, options map
 			}
 			argNum++
 		}
-		if writeItself {
+		if len(strings[name]) > 0 && writeItself { // Ignore empty template part
 			if _, err := w.Write([]byte(strings[name])); err != nil {
 				return errors.New("While writing template \"" + name + "\": " + err.Error())
 			}
 		}
+
+		// Suffix
 		if options[name].Suffix {
 			if s, ok := arguments[argNum].(string); ok {
 				if s != "" {
@@ -49,6 +58,9 @@ func Execute(w io.Writer, strings map[string]string, order []string, options map
 			}
 			argNum++
 		}
+	}
+	if argNum!=len(arguments){
+		return errors.New("Too many arguments: required "+strconvhelper.FormatInt(argNum)+", but given "+strconvhelper.FormatInt(len(arguments)))
 	}
 	return nil
 }
